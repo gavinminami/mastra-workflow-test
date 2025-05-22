@@ -11,6 +11,7 @@ export class JobProcessorClient {
   private pubsub: PubSub;
   private topicName: string;
   private jobResultProcessor: JobResultProcessor;
+  private started: boolean = false;
 
   constructor(
     pubsub: PubSub,
@@ -60,6 +61,11 @@ export class JobProcessorClient {
     submission: JobSubmission,
     timeoutMs: number = 5 * 60 * 1000
   ): Promise<JobResult> {
+    if (!this.started) {
+      // requires start() to be called first which starts the job result processor
+      throw new Error("JobProcessorClient not started");
+    }
+
     const jobId = await this.submitJob(submission);
 
     return new Promise((resolve, reject) => {
@@ -92,7 +98,11 @@ export class JobProcessorClient {
    * Start the client
    */
   public start(): JobProcessorClient {
+    if (this.started) {
+      return this;
+    }
     this.jobResultProcessor.start();
+    this.started = true;
     return this;
   }
 
