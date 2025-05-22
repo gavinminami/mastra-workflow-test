@@ -112,6 +112,8 @@ export class JobProcessor {
    * @param result The job result to publish
    */
   private async publishResult(result: JobResult): Promise<void> {
+    console.log(`Publishing result to ${this.resultsTopic}`);
+    console.log(JSON.stringify(result, null, 2));
     try {
       const messageBuffer = Buffer.from(JSON.stringify(result));
       await this.pubsub.topic(this.resultsTopic).publishMessage({

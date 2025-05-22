@@ -6,14 +6,29 @@ import { weatherAgent } from "./agents";
 import { registerApiRoute } from "@mastra/core/server";
 import { PubSub } from "@google-cloud/pubsub";
 import { JobMessage, JobProcessor } from "./workflows/job-processor";
-import { JobResultProcessor } from "./workflows/job-result-processor";
-import { v4 as uuidv4 } from "uuid";
+import { JobProcessorClient } from "./workflows/job-processor-client";
 
 const pubsub = process.env.PUBSUB_CREDENTIALS
   ? new PubSub({
       credentials: JSON.parse(process.env.PUBSUB_CREDENTIALS),
     })
   : new PubSub();
+
+const pubsubTopic = process.env.PUBSUB_TOPIC || "gavin-workflow-test";
+const pubsubSubscription =
+  process.env.PUBSUB_SUBSCRIPTION || "gavin-workflow-test-subscriber";
+const pubsubResultsTopic =
+  process.env.PUBSUB_RESULTS_TOPIC || "gavin-workflow-test-results";
+const pubsubResultsSubscription =
+  process.env.PUBSUB_RESULTS_SUBSCRIPTION ||
+  "gavin-workflow-test-results-subscriber";
+
+const jobProcessorClient = new JobProcessorClient(
+  pubsub,
+  pubsubTopic,
+  pubsubResultsTopic,
+  pubsubResultsSubscription
+).start();
 
 export const mastra = new Mastra({
   workflows: { weatherWorkflow },
@@ -40,7 +55,6 @@ export const mastra = new Mastra({
             const firstStep = workflow.stepGraph.initial[0].step;
             console.log({ firstStep });
             const message = {
-              jobId: uuidv4(),
               jobType: firstStep?.id,
               arguments: [],
               runId,
@@ -48,13 +62,12 @@ export const mastra = new Mastra({
               triggerData: await c.req.json(),
               stepId: firstStep?.id,
             };
-            console.log(
-              "Publishing message:",
-              JSON.stringify(message, null, 2)
-            );
-            await pubsub.topic("gavin-workflow-test").publishMessage({
-              data: Buffer.from(JSON.stringify(message)),
-            });
+
+            const result =
+              await jobProcessorClient.submitAndWaitForResult(message);
+            console.log(JSON.stringify(result, null, 2));
+            // const jobId = await jobProcessorClient.submitJob(message);
+            // console.log(`Submitted job ${jobId}`);
           }
           await next();
         },
@@ -84,7 +97,7 @@ export const mastra = new Mastra({
           // const agents = await mastra.getAgent("my-agent");
 
           // publish a message to pubsub
-          pubsub.topic("gavin-workflow-test").publishMessage({
+          pubsub.topic(pubsubTopic).publishMessage({
             data: Buffer.from("Hello, world!"),
           });
           return c.json({ message: "Hello, world!" });
@@ -116,53 +129,5 @@ jobProcessor.registerHandler("plan-activities", async (job: JobMessage) => {
 });
 
 jobProcessor.start();
-
-const jobResultProcessor = new JobResultProcessor(
-  pubsub,
-  "gavin-workflow-test-results",
-  "gavin-workflow-test-results-subscriber",
-  24 * 60 * 60
-);
-jobResultProcessor.start();
-
-// startPubSubSubscription(
-//   pubsub,
-//   "gavin-workflow-test-subscriber",
-//   async (message) => {
-//     console.log(`Received message: ${message.data}`);
-//     const { runId, workflowName, triggerData, stepId } = JSON.parse(
-//       message.data.toString()
-//     );
-//     console.log({ runId, workflowName, triggerData, stepId });
-//     const workflow = mastra.getWorkflow(workflowName);
-//     console.log({ workflow });
-//     console.log(workflow.steps);
-//     const step = workflow.steps[stepId];
-//     console.log({ step });
-//     console.log({ triggerData });
-
-//     const result = await step.execute({
-//       steps: {},
-//       triggerData: {
-//         city: "90275",
-//       },
-//       attempts: {
-//         "fetch-weather": 0,
-//         "plan-activities": 0,
-//       },
-//       inputData: {},
-//     });
-//     // console.log({ result });
-//     // const step = workflow.steps[stepId];
-//     // console.log({ step });
-//     // const result = await step.execute({
-//     //   context: {
-//     //     runId,
-//     //     workflowName,
-//     //   },
-//     // });
-//     // console.log({ result });
-//   }
-// );
 
 mastra.getServer();

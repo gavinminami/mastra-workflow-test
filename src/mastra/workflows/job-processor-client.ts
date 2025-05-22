@@ -39,6 +39,8 @@ export class JobProcessorClient {
       ...submission,
     };
 
+    console.log(`Submitting job ${jobId} to ${this.topicName}`);
+    console.log(JSON.stringify(message, null, 2));
     const messageBuffer = Buffer.from(JSON.stringify(message));
     await this.pubsub.topic(this.topicName).publishMessage({
       data: messageBuffer,
@@ -66,31 +68,32 @@ export class JobProcessorClient {
         reject(new Error(`Job ${jobId} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
 
-      const handler = async (result: JobResult) => {
+      const handler = (result: JobResult) => {
+        console.log("received result");
+        console.log(JSON.stringify(result, null, 2));
         if (result.jobId === jobId) {
+          console.log(`Received result with target jobId: ${jobId}`);
           cleanup();
-          if (result.success) {
-            resolve(result);
-          } else {
-            reject(new Error(result.error || "Job failed"));
-          }
+
+          resolve(result);
         }
       };
 
       const cleanup = () => {
         clearTimeout(timeout);
-        this.jobResultProcessor.unregisterHandler(submission.jobType, handler);
+        this.jobResultProcessor.removeListener("result", handler);
       };
 
-      this.jobResultProcessor.registerHandler(submission.jobType, handler);
+      this.jobResultProcessor.on("result", handler);
     });
   }
 
   /**
    * Start the client
    */
-  public start(): void {
+  public start(): JobProcessorClient {
     this.jobResultProcessor.start();
+    return this;
   }
 
   /**
