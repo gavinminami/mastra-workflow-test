@@ -1,20 +1,14 @@
 import { PubSub, Subscription } from "@google-cloud/pubsub";
 import { EventEmitter } from "events";
-
-export interface JobResult {
-  jobId: string;
-  jobType: string;
-  success: boolean;
-  result?: any;
-  error?: string;
-}
-
-type ResultHandler = (result: JobResult) => Promise<void>;
+import { JobResult, JobStatusNotifier } from "./types";
 
 // 30 days in seconds
 const DEFAULT_EXPIRATION_SECONDS = 30 * 24 * 60 * 60;
 
-export class JobResultProcessor extends EventEmitter {
+export class PubSubJobStatusNotifier<R extends JobResult>
+  extends EventEmitter
+  implements JobStatusNotifier
+{
   private pubsub: PubSub;
   private subscription: Subscription;
   private isShuttingDown: boolean = false;
@@ -108,12 +102,13 @@ export class JobResultProcessor extends EventEmitter {
       const messageData = Buffer.from(message.data).toString();
       console.log("Received result message:", messageData);
 
-      const result = JSON.parse(messageData) as JobResult;
+      const result = JSON.parse(messageData);
 
+      console.log("Received result1:", result);
       // Emit the result event
       this.emit("result", result);
       // Also emit a job-type specific event
-      this.emit(`result:${result.jobType}`, result);
+      // this.emit(`result:${result.jobType}`, result);
 
       message.ack();
     } catch (error: unknown) {
@@ -131,7 +126,7 @@ export class JobResultProcessor extends EventEmitter {
    * Start listening for result messages
    */
   public start(): void {
-    console.log(`Started JobResultProcessor ${this.subscription.name}`);
+    console.log(`Started JobCompletionNotifier ${this.subscription.name}`);
     // Remove any existing message handlers to prevent duplicates
     this.subscription.removeListener("message", this.handleMessage.bind(this));
     // Add the message handler

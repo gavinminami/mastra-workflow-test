@@ -1,16 +1,12 @@
 import { PubSub } from "@google-cloud/pubsub";
-import { JobResultProcessor, JobResult } from "./job-result-processor";
+import { PubSubJobStatusNotifier } from "./job-completion-notifier";
+import { JobResult, JobSubmission } from "./types";
 import { v4 as uuidv4 } from "uuid";
 
-export interface JobSubmission {
-  jobType: string;
-  arguments: any[];
-}
-
-export class JobProcessorClient {
+export class JobProcessorClient<T extends JobSubmission, R extends JobResult> {
   private pubsub: PubSub;
   private topicName: string;
-  private jobResultProcessor: JobResultProcessor;
+  private jobStatusNotifier: PubSubJobStatusNotifier<R>;
   private started: boolean = false;
 
   constructor(
@@ -21,7 +17,7 @@ export class JobProcessorClient {
   ) {
     this.pubsub = pubsub;
     this.topicName = topicName;
-    this.jobResultProcessor = new JobResultProcessor(
+    this.jobStatusNotifier = new PubSubJobStatusNotifier<R>(
       pubsub,
       resultsTopicName,
       resultsSubscriptionName
@@ -33,7 +29,7 @@ export class JobProcessorClient {
    * @param submission The job submission details
    * @returns The ID of the submitted job
    */
-  public async submitJob(submission: JobSubmission): Promise<string> {
+  public async submitJob(submission: T): Promise<string> {
     const jobId = uuidv4();
     const message = {
       jobId,
@@ -58,9 +54,9 @@ export class JobProcessorClient {
    * @throws Error if the job times out or fails
    */
   public async submitAndWaitForResult(
-    submission: JobSubmission,
+    submission: T,
     timeoutMs: number = 5 * 60 * 1000
-  ): Promise<JobResult> {
+  ): Promise<R> {
     if (!this.started) {
       // requires start() to be called first which starts the job result processor
       throw new Error("JobProcessorClient not started");
@@ -74,34 +70,34 @@ export class JobProcessorClient {
         reject(new Error(`Job ${jobId} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
 
-      const handler = (result: JobResult) => {
-        console.log("received result");
-        console.log(JSON.stringify(result, null, 2));
+      const handler = (result: R) => {
         if (result.jobId === jobId) {
           console.log(`Received result with target jobId: ${jobId}`);
           cleanup();
 
           resolve(result);
+        } else {
+          console.log(`Received result with unexpected jobId: ${result.jobId}`);
         }
       };
 
       const cleanup = () => {
         clearTimeout(timeout);
-        this.jobResultProcessor.removeListener("result", handler);
+        this.jobStatusNotifier.removeListener("result", handler);
       };
 
-      this.jobResultProcessor.on("result", handler);
+      this.jobStatusNotifier.on("result", handler);
     });
   }
 
   /**
    * Start the client
    */
-  public start(): JobProcessorClient {
+  public start(): JobProcessorClient<T, R> {
     if (this.started) {
       return this;
     }
-    this.jobResultProcessor.start();
+    this.jobStatusNotifier.start();
     this.started = true;
     return this;
   }
@@ -110,6 +106,6 @@ export class JobProcessorClient {
    * Stop the client
    */
   public async stop(): Promise<void> {
-    await this.jobResultProcessor.stop();
+    await this.jobStatusNotifier.stop();
   }
 }

@@ -1,5 +1,5 @@
 import { PubSub, Subscription } from "@google-cloud/pubsub";
-import { JobResult } from "./job-result-processor";
+import { JobResult, JobSubmission } from "./types";
 
 type JobHandler = (...args: any[]) => Promise<any>;
 
@@ -12,7 +12,7 @@ export interface JobMessage {
 // 30 days in seconds
 const DEFAULT_EXPIRATION_SECONDS = 30 * 24 * 60 * 60;
 
-export class JobProcessor {
+export class JobServer {
   private pubsub: PubSub;
   private subscription: Subscription;
   private resultsTopic: string;

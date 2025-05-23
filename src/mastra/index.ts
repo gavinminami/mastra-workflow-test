@@ -5,8 +5,9 @@ import { weatherWorkflow } from "./workflows";
 import { weatherAgent } from "./agents";
 import { registerApiRoute } from "@mastra/core/server";
 import { PubSub } from "@google-cloud/pubsub";
-import { JobMessage, JobProcessor } from "./workflows/job-processor";
-import { JobProcessorClient } from "./workflows/job-processor-client";
+import { JobMessage, JobServer } from "./jobs/job-server";
+import { JobProcessorClient } from "./jobs/job-processor-client";
+import { JobResult, JobSubmission } from "./jobs/types";
 
 const pubsub = process.env.PUBSUB_CREDENTIALS
   ? new PubSub({
@@ -23,7 +24,19 @@ const pubsubResultsSubscription =
   process.env.PUBSUB_RESULTS_SUBSCRIPTION ||
   "gavin-workflow-test-results-subscriber";
 
-const jobProcessorClient = new JobProcessorClient(
+type MyJobSpec = JobSubmission & {
+  arg1: string;
+  runId: string;
+  workflowName: string;
+  triggerData: any;
+  stepId: string;
+};
+
+type MyJobResult = JobResult & {
+  xyz: string;
+};
+
+const jobProcessorClient = new JobProcessorClient<MyJobSpec, MyJobResult>(
   pubsub,
   pubsubTopic,
   pubsubResultsTopic,
@@ -56,8 +69,9 @@ export const mastra = new Mastra({
             console.log({ firstStep });
             const message = {
               jobType: firstStep?.id,
-              arguments: [],
-              runId,
+              arguments: ["test"],
+              arg1: "test",
+              runId: runId || "test",
               workflowName,
               triggerData: await c.req.json(),
               stepId: firstStep?.id,
@@ -107,7 +121,7 @@ export const mastra = new Mastra({
   },
 });
 
-const jobProcessor = new JobProcessor(
+const jobProcessor = new JobServer(
   pubsub,
   "gavin-workflow-test",
   "gavin-workflow-test-results",
@@ -115,14 +129,22 @@ const jobProcessor = new JobProcessor(
   24 * 60 * 60
 );
 jobProcessor.registerHandler("fetch-weather", async (job: JobMessage) => {
-  console.log("fetch-weather", job);
+  console.log("processing fetch-weather", job);
+
+  // add a delay
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
   return {
     jobId: job.jobId,
   };
 });
 
 jobProcessor.registerHandler("plan-activities", async (job: JobMessage) => {
-  console.log("plan-activities", job);
+  console.log("processing plan-activities", job);
+
+  // add a delay
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
   return {
     jobId: job.jobId,
   };
