@@ -5,9 +5,9 @@ import { weatherWorkflow } from "./workflows";
 import { weatherAgent } from "./agents";
 import { registerApiRoute } from "@mastra/core/server";
 import { PubSub } from "@google-cloud/pubsub";
-import { JobMessage, JobServer } from "./jobs/job-server";
-import { JobProcessorClient } from "./jobs/job-processor-client";
-import { JobResult, JobSubmission } from "./jobs/types";
+import { JobServer } from "./jobs/job-server";
+import { JobClient } from "./jobs/job-client";
+import { JobResult, JobSubmission, JobArgument } from "./jobs/types";
 
 const pubsub = process.env.PUBSUB_CREDENTIALS
   ? new PubSub({
@@ -25,7 +25,6 @@ const pubsubResultsSubscription =
   "gavin-workflow-test-results-subscriber";
 
 type MyJobSpec = JobSubmission & {
-  arg1: string;
   runId: string;
   workflowName: string;
   triggerData: any;
@@ -36,7 +35,7 @@ type MyJobResult = JobResult & {
   xyz: string;
 };
 
-const jobProcessorClient = new JobProcessorClient<MyJobSpec, MyJobResult>(
+const jobClient = new JobClient(
   pubsub,
   pubsubTopic,
   pubsubResultsTopic,
@@ -69,16 +68,14 @@ export const mastra = new Mastra({
             console.log({ firstStep });
             const message = {
               jobType: firstStep?.id,
-              arguments: ["test"],
-              arg1: "test",
+              args: [{ name: "arg1", value: "test" }],
               runId: runId || "test",
               workflowName,
               triggerData: await c.req.json(),
               stepId: firstStep?.id,
             };
 
-            const result =
-              await jobProcessorClient.submitAndWaitForResult(message);
+            const result = await jobClient.submitAndWaitForResult(message);
             console.log(JSON.stringify(result, null, 2));
             // const jobId = await jobProcessorClient.submitJob(message);
             // console.log(`Submitted job ${jobId}`);
@@ -117,6 +114,31 @@ export const mastra = new Mastra({
           return c.json({ message: "Hello, world!" });
         },
       }),
+      registerApiRoute("/test-job-processor", {
+        method: "GET",
+        handler: async (c) => {
+          const message = {
+            jobType: "test-job",
+            args: [{ name: "arg1", value: "test" }],
+            runId: "test",
+            workflowName: "test-workflow",
+            triggerData: { hello: "world" },
+            stepId: "test-step",
+          };
+
+          const result = await jobClient.submitAndWaitForResult<
+            MyJobSpec,
+            MyJobResult
+          >(message);
+          console.log(JSON.stringify(result, null, 2));
+
+          if (result.error) {
+            return c.json({ error: result.error }, 500);
+          }
+
+          return c.json({ hello: result.retval });
+        },
+      }),
     ],
   },
 });
@@ -127,27 +149,13 @@ const jobProcessor = new JobServer(
   "gavin-workflow-test-results",
   "gavin-workflow-test-subscriber",
   24 * 60 * 60
-);
-jobProcessor.registerHandler("fetch-weather", async (job: JobMessage) => {
-  console.log("processing fetch-weather", job);
+).registerHandler("test-job", async (arg1?: JobArgument) => {
+  console.log("processing test-job", arg1);
 
   // add a delay
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  return {
-    jobId: job.jobId,
-  };
-});
-
-jobProcessor.registerHandler("plan-activities", async (job: JobMessage) => {
-  console.log("processing plan-activities", job);
-
-  // add a delay
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-
-  return {
-    jobId: job.jobId,
-  };
+  return "hello" + (arg1?.value || "asdf");
 });
 
 jobProcessor.start();

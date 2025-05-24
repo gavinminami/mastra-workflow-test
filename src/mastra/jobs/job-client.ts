@@ -1,12 +1,12 @@
 import { PubSub } from "@google-cloud/pubsub";
-import { PubSubJobStatusNotifier } from "./job-completion-notifier";
+import { PubSubJobStatusNotifier } from "./pubsub-job-completion-notifier";
 import { JobResult, JobSubmission } from "./types";
 import { v4 as uuidv4 } from "uuid";
 
-export class JobProcessorClient<T extends JobSubmission, R extends JobResult> {
+export class JobClient {
   private pubsub: PubSub;
   private topicName: string;
-  private jobStatusNotifier: PubSubJobStatusNotifier<R>;
+  private jobStatusNotifier: PubSubJobStatusNotifier;
   private started: boolean = false;
 
   constructor(
@@ -17,7 +17,7 @@ export class JobProcessorClient<T extends JobSubmission, R extends JobResult> {
   ) {
     this.pubsub = pubsub;
     this.topicName = topicName;
-    this.jobStatusNotifier = new PubSubJobStatusNotifier<R>(
+    this.jobStatusNotifier = new PubSubJobStatusNotifier(
       pubsub,
       resultsTopicName,
       resultsSubscriptionName
@@ -29,7 +29,9 @@ export class JobProcessorClient<T extends JobSubmission, R extends JobResult> {
    * @param submission The job submission details
    * @returns The ID of the submitted job
    */
-  public async submitJob(submission: T): Promise<string> {
+  public async submitJob<T extends JobSubmission>(
+    submission: T
+  ): Promise<string> {
     const jobId = uuidv4();
     const message = {
       jobId,
@@ -53,10 +55,10 @@ export class JobProcessorClient<T extends JobSubmission, R extends JobResult> {
    * @returns The job result
    * @throws Error if the job times out or fails
    */
-  public async submitAndWaitForResult(
-    submission: T,
-    timeoutMs: number = 5 * 60 * 1000
-  ): Promise<R> {
+  public async submitAndWaitForResult<
+    T extends JobSubmission,
+    R extends JobResult,
+  >(submission: T, timeoutMs: number = 10 * 1000): Promise<R> {
     if (!this.started) {
       // requires start() to be called first which starts the job result processor
       throw new Error("JobProcessorClient not started");
@@ -93,7 +95,7 @@ export class JobProcessorClient<T extends JobSubmission, R extends JobResult> {
   /**
    * Start the client
    */
-  public start(): JobProcessorClient<T, R> {
+  public start(): JobClient {
     if (this.started) {
       return this;
     }

@@ -1,14 +1,23 @@
-export interface JobResult {
+export interface JobArgument {
+  name: string;
+  value: any;
+}
+
+export interface JobMessage {
   jobId: string;
   jobType: string;
-  success: boolean;
-  result?: any;
+  args: JobArgument[];
+}
+
+export interface JobResult {
+  jobId: string;
+  retval?: any;
   error?: string;
 }
 
 export interface JobSubmission {
   jobType: string;
-  arguments: any[];
+  args: JobArgument[];
 }
 
 export interface JobStatusNotifier {

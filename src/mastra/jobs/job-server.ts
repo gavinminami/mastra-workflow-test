@@ -1,13 +1,7 @@
 import { PubSub, Subscription } from "@google-cloud/pubsub";
-import { JobResult, JobSubmission } from "./types";
+import { JobResult, JobMessage } from "./types";
 
 type JobHandler = (...args: any[]) => Promise<any>;
-
-export interface JobMessage {
-  jobId: string;
-  jobType: string;
-  arguments: any[];
-}
 
 // 30 days in seconds
 const DEFAULT_EXPIRATION_SECONDS = 30 * 24 * 60 * 60;
@@ -103,8 +97,9 @@ export class JobServer {
    * @param jobType The type of job this handler will process
    * @param handler The function that will process the job
    */
-  public registerHandler(jobType: string, handler: JobHandler): void {
+  public registerHandler(jobType: string, handler: JobHandler): JobServer {
     this.handlers.set(jobType, handler);
+    return this;
   }
 
   /**
@@ -129,6 +124,8 @@ export class JobServer {
    * @param message The message received from PubSub
    */
   private async handleMessage(message: any): Promise<void> {
+    let error: Error | null = null;
+
     try {
       console.log(
         "Received message:",
@@ -137,6 +134,9 @@ export class JobServer {
       const data = JSON.parse(
         Buffer.from(message.data).toString()
       ) as JobMessage;
+
+      const { jobId, args } = data;
+
       const handler = this.handlers.get(data.jobType);
 
       if (!handler) {
@@ -144,9 +144,7 @@ export class JobServer {
         console.log(message);
         // Ack the message since retrying won't help if there's no handler
         await this.publishResult({
-          jobId: data.jobId,
-          jobType: data.jobType,
-          success: false,
+          jobId,
           error: `No handler registered for job type: ${data.jobType}`,
         });
         message.ack();
@@ -155,34 +153,19 @@ export class JobServer {
 
       try {
         console.log("Executing handler:", JSON.stringify(data, null, 2));
-        const result = await handler(data);
+        const retval = await handler(...(args || []));
         await this.publishResult({
           jobId: data.jobId,
-          jobType: data.jobType,
-          success: true,
-          result,
+          retval,
         });
+
         message.ack();
       } catch (error: unknown) {
         console.error("Error executing handler:", error);
         await this.publishResult({
           jobId: data.jobId,
-          jobType: data.jobType,
-          success: false,
           error: error instanceof Error ? error.message : String(error),
         });
-        // Only nack if the error might be temporary
-        if (
-          (error instanceof Error &&
-            (error.message.includes("temporary") ||
-              error.message.includes("retry"))) ||
-          error instanceof SyntaxError
-        ) {
-          message.nack();
-        } else {
-          // For permanent errors, ack the message to prevent infinite retries
-          message.ack();
-        }
       }
     } catch (error: unknown) {
       console.error("Error processing message:", error);

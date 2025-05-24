@@ -1,11 +1,11 @@
 import { PubSub, Subscription } from "@google-cloud/pubsub";
 import { EventEmitter } from "events";
-import { JobResult, JobStatusNotifier } from "./types";
+import { JobStatusNotifier } from "./types";
 
 // 30 days in seconds
 const DEFAULT_EXPIRATION_SECONDS = 30 * 24 * 60 * 60;
 
-export class PubSubJobStatusNotifier<R extends JobResult>
+export class PubSubJobStatusNotifier
   extends EventEmitter
   implements JobStatusNotifier
 {
